@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AeroTrack Pro - Global Flight Radar & Live ADS-B Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300e5ff'><path d='M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z'/></svg>">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- Custom Modern Aviation Radar Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Top Navigation Bar -->
+    <header class="top-navbar">
+      <div class="brand-section">
+        <button class="btn-tactical mobile-toggle-btn" id="mobileMenuBtn" style="display:none;" title="Toggle Flight Roster">☰</button>
+        <div class="radar-logo">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+          </svg>
+        </div>
+        <h1 class="brand-title">AERO<span>TRACK</span> <span class="pro-badge">PRO</span></h1>
+      </div>
+
+      <div class="nav-stats">
+        <div class="stat-item">
+          <span>ACTIVE TARGETS:</span>
+          <span class="stat-val" id="activeFlightsCount">0</span>
+        </div>
+        <div class="stat-item">
+          <span>TIME:</span>
+          <span class="stat-val" id="utcClock">--:--:-- UTC</span>
+        </div>
+        <span class="status-badge sim" id="dataSourceBadge">SIMULATION FLEET</span>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn-tactical" id="modeToggleBtn" title="Toggle between realistic simulation fleet and live ADS-B network">
+          ✈ SIMULATION
+        </button>
+        <button class="btn-tactical" id="soundToggleBtn" title="Toggle radar blip and aviation audio effects">
+          🔊 Audio ON
+        </button>
+        <button class="btn-tactical" id="atcToggleBtn" title="Synthesize live Air Traffic Control radio communications">
+          📻 ATC Radio OFF
+        </button>
+        <button class="btn-tactical" id="cabinHumBtn" title="Toggle soothing low-frequency cabin & jet engine hum">
+          ✈ Cabin Hum OFF
+        </button>
+        <button class="btn-tactical" id="spawnFlightBtn" title="Spawn custom flight on radar">
+          🚀 Spawn Flight
+        </button>
+        <button class="btn-tactical" onclick="document.getElementById('airportBoardModal').classList.toggle('visible')" title="Open Airport Flight Information Display (FIDS)">
+          🏢 Airport Boards
+        </button>
+        <a href="flight-calendar.html" class="btn-tactical" style="text-decoration:none; background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(37, 99, 235, 0.25)); border-color: var(--accent-cyan);" title="Search your flight, export to calendar & set 2-day reminder">
+          📅 Flight Reminders
+        </a>
+        <button class="btn-tactical" id="settingsBtn" title="API Configuration & Settings">
+          ⚙ Settings
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Viewport Layout -->
+    <main class="main-view">
+      
+      <!-- Left Sidebar: Search, Filters & Aircraft Roster -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" class="search-input" placeholder="Search flight, airline, airport, hex..." autocomplete="off" spellcheck="false">
+            <button class="clear-search-btn" id="clearSearchBtn">&times;</button>
+          </div>
+
+          <div class="filters-bar">
+            <select id="filterAirlineSelect" class="select-filter">
+              <option value="ALL">All Airlines</option>
+            </select>
+            <select id="filterStatusSelect" class="select-filter">
+              <option value="ALL">All Status</option>
+              <option value="Climbing">Climbing</option>
+              <option value="Cruising">Cruising</option>
+              <option value="Descending">Descending</option>
+            </select>
+          </div>
+
+          <div class="filter-sliders">
+            <div class="slider-row">
+              <span>Altitude Filter:</span>
+              <span id="altValueLabel">0 - 50,000 ft</span>
+            </div>
+            <div class="range-inputs">
+              <input type="range" id="altMinInput" min="0" max="50000" step="1000" value="0">
+              <input type="range" id="altMaxInput" min="0" max="50000" step="1000" value="50000">
+            </div>
+          </div>
+        </div>
+
+        <div class="flight-list-scroll" id="flightListContainer">
+          <!-- Dynamic Flight Cards inserted here -->
+        </div>
+      </aside>
+
+      <!-- Center & Right: Interactive Map -->
+      <section class="map-viewport">
+        <div id="map"></div>
+
+        <!-- Floating Map Quick Controls -->
+        <div class="map-floating-bar">
+          <select id="mapThemeSelect" class="select-filter" style="width: 120px;">
+            <option value="radarDark">Radar Dark</option>
+            <option value="satellite">Satellite</option>
+            <option value="radarLight">Aviation Day</option>
+          </select>
+          <button class="btn-tactical active" id="toggleAirportsBtn" title="Toggle Airport Pins on Map">
+            🛬 Hubs
+          </button>
+          <button class="btn-tactical" id="weatherRadarBtn" title="Toggle Live Doppler Weather Radar (RainViewer)">
+            ⛈️ Weather
+          </button>
+          <div class="stat-item" style="padding: 0 4px;" title="Simulation physics acceleration rate">
+            <span style="font-size:0.75rem;">SIM SPEED:</span>
+            <input type="range" id="simSpeedSlider" min="1" max="100" value="35" style="width: 60px; accent-color: var(--accent-cyan);">
+            <span id="simSpeedValue" style="font-family: var(--font-mono); font-size:0.75rem; color: var(--accent-cyan); width: 26px;">35x</span>
+          </div>
+        </div>
+
+        <!-- Altitude Legend Bar -->
+        <div class="altitude-legend">
+          <div class="legend-item"><div class="legend-color" style="background:#10b981;"></div> &lt; 5,000 ft (Low)</div>
+          <div class="legend-item"><div class="legend-color" style="background:#fbbf24;"></div> 5k - 18k ft (Climb)</div>
+          <div class="legend-item"><div class="legend-color" style="background:#00d2ff;"></div> 18k - 34k ft (Cruise)</div>
+          <div class="legend-item"><div class="legend-color" style="background:#a855f7;"></div> &gt; 34,000 ft (High)</div>
+        </div>
+
+        <!-- Slide-out Telemetry Inspector Panel -->
+        <div class="flight-details-panel hidden" id="flightDetailsPanel">
+          <div class="details-header">
+            <div class="details-title-wrap">
+              <h2 class="details-flight-num" id="detailFlightNumber">BA117</h2>
+              <span class="details-airline-name" id="detailAirline">British Airways</span>
+            </div>
+            <button class="details-close-btn" id="closeDetailsBtn">&times;</button>
+          </div>
+
+          <div class="details-body">
+            <!-- Route Progress Card -->
+            <div class="route-progress-card">
+              <div class="route-nodes">
+                <div class="node-box">
+                  <span class="node-iata" id="detailOrigIata">LHR</span>
+                  <span class="node-city" id="detailOrigCity">London, United Kingdom</span>
+                </div>
+                <div style="color: var(--accent-cyan); font-size: 1.2rem;">➔</div>
+                <div class="node-box dest">
+                  <span class="node-iata" id="detailDestIata">JFK</span>
+                  <span class="node-city" id="detailDestCity">New York, United States</span>
+                </div>
+              </div>
+
+              <div class="progress-track">
+                <div class="progress-fill" id="progressBarFill"></div>
+              </div>
+
+              <div class="route-metrics">
+                <span>Progress: <strong id="progressPercentage">50%</strong></span>
+                <span>Remaining: <strong id="detailRemainingDist">1,750 NM</strong></span>
+                <span>Total: <strong id="detailTotalDist">3,500 NM</strong></span>
+              </div>
+            </div>
+
+            <!-- Live Gauges Telemetry Grid -->
+            <div class="telemetry-grid">
+              <div class="telemetry-card">
+                <span class="telemetry-label">Altitude</span>
+                <span class="telemetry-val" id="detailAltitude">37,000 ft</span>
+              </div>
+              <div class="telemetry-card">
+                <span class="telemetry-label">Ground Speed</span>
+                <span class="telemetry-val" id="detailSpeed">485 kts</span>
+              </div>
+              <div class="telemetry-card">
+                <span class="telemetry-label">True Heading</span>
+                <span class="telemetry-val" id="detailHeading">284°</span>
+              </div>
+              <div class="telemetry-card">
+                <span class="telemetry-label">Vertical Speed</span>
+                <span class="telemetry-val text-level" id="detailVRate">0 fpm</span>
+              </div>
+            </div>
+
+            <!-- Cockpit Primary Flight Display (HUD) -->
+            <div class="hud-card">
+              <div class="hud-title-bar">
+                <span>COCKPIT PRIMARY FLIGHT DISPLAY</span>
+                <span id="detailStatusBadge" class="status-badge sim">CRUISING</span>
+              </div>
+              <canvas id="hudCanvas"></canvas>
+            </div>
+
+            <!-- Aircraft & Squawk Technical Data -->
+            <div class="tech-details-list">
+              <div class="tech-row">
+                <span class="tech-key">Aircraft Type</span>
+                <span class="tech-val" id="detailAircraft">Boeing 777-300ER</span>
+              </div>
+              <div class="tech-row">
+                <span class="tech-key">Registration</span>
+                <span class="tech-val" id="detailReg">G-STBA</span>
+              </div>
+              <div class="tech-row">
+                <span class="tech-key">ICAO24 Transponder</span>
+                <span class="tech-val" id="detailHex">4007F2</span>
+              </div>
+              <div class="tech-row">
+                <span class="tech-key">Callsign</span>
+                <span class="tech-val" id="detailCallsign">BAW117</span>
+              </div>
+              <div class="tech-row">
+                <span class="tech-key">Squawk Code</span>
+                <span class="tech-val val-squawk" id="detailSquawk">1200</span>
+              </div>
+              <div class="tech-row">
+                <span class="tech-key">Coordinates</span>
+                <span class="tech-val" id="detailCoords">45.1234°, -35.6789°</span>
+              </div>
+            </div>
+
+            <!-- Destination Weather METAR -->
+            <div class="weather-card">
+              <div class="weather-header">
+                <span>🌦 Destination Weather</span>
+              </div>
+              <div class="weather-desc" id="detailDestWeather">
+                Scattered clouds, 18°C (Wind 260° @ 12 kts)
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="details-actions">
+              <button class="btn-detail" id="favoriteToggleBtn">☆ Add to Watchlist</button>
+              <button class="btn-detail" id="followFlightBtn">🎯 Chase Camera OFF</button>
+            </div>
+            <div class="details-actions" style="margin-top: 8px;">
+              <a id="detailCalReminderBtn" href="flight-calendar.html" target="_blank" class="btn-detail" style="text-decoration:none; text-align:center; background: rgba(0, 229, 255, 0.15); border-color: var(--accent-cyan); color: var(--accent-cyan);">
+                📅 Set 2-Day Calendar Reminder
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- Modal: Airport Departures & Arrivals FIDS Board -->
+    <div class="modal-overlay hidden" id="airportBoardModal">
+      <div class="modal-fids">
+        <div class="modal-fids-header">
+          <div class="fids-header-left">
+            <h2 class="fids-title" id="airportBoardTitle">London Heathrow Airport (LHR)</h2>
+            <p class="fids-subtitle" id="airportBoardSubtitle">London, United Kingdom • Elevation: 83 ft</p>
+          </div>
+          <div style="display:flex; align-items:center; gap: 12px;">
+            <select id="airportSelectPicker" class="select-filter" style="width: 240px; font-size: 0.85rem;"></select>
+            <button class="details-close-btn" id="closeAirportBtn">&times;</button>
+          </div>
+        </div>
+
+        <div class="fids-wx-bar" id="airportWeatherWidget">
+          <!-- Dynamic METAR weather injected here -->
+        </div>
+
+        <div class="fids-nav-tabs">
+          <div style="display:flex; gap: 10px;">
+            <button class="tab-btn active" id="airportTabDepartures">🛫 DEPARTURES</button>
+            <button class="tab-btn" id="airportTabArrivals">🛬 ARRIVALS</button>
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">LIVE TERMINAL FIDS RADAR</span>
+        </div>
+
+        <div class="fids-table-scroll">
+          <table class="fids-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Flight</th>
+                <th>Airline</th>
+                <th>Destination / Origin</th>
+                <th>Gate</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="airportBoardTbody">
+              <!-- Dynamic rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Settings & API Configuration -->
+    <div class="modal-overlay hidden" id="settingsModal">
+      <div class="modal-fids" style="width: 600px;">
+        <div class="modal-fids-header">
+          <div class="fids-header-left">
+            <h2 class="fids-title">⚙ Radar Settings & API Configuration</h2>
+            <p class="fids-subtitle">Configure live transponder feed credentials and radar preferences</p>
+          </div>
+          <button class="details-close-btn" id="closeSettingsBtn">&times;</button>
+        </div>
+
+        <div style="padding: 24px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto;">
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px;">
+            <h3 style="font-size: 0.95rem; color: var(--accent-cyan); margin-bottom: 8px;">📡 OpenSky Network API Credentials</h3>
+            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">
+              A free OpenSky account provides <strong>4,000 queries/day</strong> and high-resolution live ADS-B state vectors without a credit card.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div>
+                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">OpenSky Username</label>
+                <input type="text" id="settingOpenSkyUser" class="search-input" style="padding: 8px 12px;" placeholder="e.g. aviation_pilot">
+              </div>
+              <div>
+                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">OpenSky Password</label>
+                <input type="password" id="settingOpenSkyPass" class="search-input" style="padding: 8px 12px;" placeholder="••••••••">
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                <a href="https://opensky-network.org/index.php?option=com_users&view=registration" target="_blank" style="color: var(--accent-sky); font-size: 0.75rem; text-decoration: underline;">
+                  Get Free Account (No Card Required) ↗
+                </a>
+                <button class="track-btn" id="saveApiSettingsBtn">Save Credentials</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 14px;">
+            <h3 style="font-size: 0.95rem; color: #fff; margin-bottom: 8px;">🌐 Live Data Endpoint</h3>
+            <input type="text" id="settingApiEndpoint" class="search-input" style="padding: 8px 12px;" value="/api/live-flights">
+            <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">
+              Default: <code>/api/live-flights</code> (routed via local <code>server.ps1</code> proxy).
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Custom Flight Spawner -->
+    <div class="modal-overlay hidden" id="spawnModal">
+      <div class="modal-fids" style="width: 580px;">
+        <div class="modal-fids-header">
+          <div class="fids-header-left">
+            <h2 class="fids-title">🚀 Spawn Custom Aircraft</h2>
+            <p class="fids-subtitle">Create and inject any flight into the live radar simulation</p>
+          </div>
+          <button class="details-close-btn" id="closeSpawnBtn">&times;</button>
+        </div>
+
+        <div style="padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Callsign / Flight Number</label>
+              <input type="text" id="spawnFlightNum" class="search-input" style="padding: 8px 12px;" placeholder="e.g. CONC01, TOPGUN, AF1" value="CONC01">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Aircraft Model</label>
+              <input type="text" id="spawnAircraft" class="search-input" style="padding: 8px 12px;" placeholder="e.g. Concorde Supersonic" value="Concorde Supersonic">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Departure Airport</label>
+              <select id="spawnOrigSelect" class="select-filter" style="width: 100%; padding: 8px;"></select>
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Destination Airport</label>
+              <select id="spawnDestSelect" class="select-filter" style="width: 100%; padding: 8px;"></select>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Cruise Altitude (ft)</label>
+              <input type="number" id="spawnAlt" class="search-input" style="padding: 8px 12px;" value="55000">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Cruise Speed (kts)</label>
+              <input type="number" id="spawnSpeed" class="search-input" style="padding: 8px 12px;" value="1150">
+            </div>
+          </div>
+
+          <button class="btn-tactical" id="executeSpawnBtn" style="background: linear-gradient(135deg, #00e5ff, #2563eb); color: #fff; padding: 12px; font-size: 0.9rem; justify-content: center; margin-top: 8px;">
+            ✨ Launch Flight onto Radar
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Core Flight Tracker Application Scripts -->
+  <script src="js/airports-data.js"></script>
+  <script src="js/airlines-data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/hud.js"></script>
+  <script src="js/flight-engine.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
+

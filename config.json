@@ -1,0 +1,10 @@
+{
+  "port": 8080,
+  "openSky": {
+    "username": "",
+    "password": ""
+  },
+  "cacheDurationSeconds": 8,
+  "defaultTheme": "radarDark"
+}
+
