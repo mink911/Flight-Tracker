@@ -96,6 +96,13 @@ powershell -ExecutionPolicy Bypass -File server.ps1
 ### Method 3: Direct Browser Open (No Server Needed)
 Simply double-click `index.html` or open it in any modern browser (Chrome, Edge, Firefox, Safari). The simulation fleet, HUD, airport boards, filters, and audio will work 100% offline!
 
+### Method 4: Free Hosting on GitHub Pages 🌐
+This project is built to run 100% client-side with zero backend required:
+1. Push your repository to GitHub (`mink911/Flight-Tracker`).
+2. Go to **Settings** > **Pages** in your GitHub repository.
+3. Under **Branch**, select `main` and root `/` folder, then click **Save**.
+4. Your website will be live worldwide at: `https://mink911.github.io/Flight-Tracker/`!
+
 ---
 
 ## ⌨️ Keyboard Shortcuts
